@@ -179,7 +179,7 @@ def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
     I_list = np.asarray(I_list)
     dts = T / I_list
     Y_ref = reference(F, Y0, T, [T])[:, -1]
-    err = {name: np.array([np.linalg.norm(SCHEMES[name]["solver"](Y0, T, int(k))[:, -1]
+    err = {name: np.array([np.linalg.norm(SCHEMES[name]["solver"](Y0, T, int(k), F)[:, -1]
                                           - Y_ref)
                            for k in I_list])
            for name in names}
@@ -222,6 +222,15 @@ def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
     return slopes
 
 
+def same_cost_comparison(I_list=(100, 200, 400)):
+    Y_ref = reference(F, Y0, T, [T])[:, -1]
+    for k in I_list:
+        e_rk4 = np.linalg.norm(RK4(Y0, T, k, F)[:, -1] - Y_ref)
+        e_pm = np.linalg.norm(PointMilieu(N, Y0, T, 2 * k, F)[:, -1] - Y_ref)
+        print(f"  {4 * k:5d} evaluations:  RK4 {e_rk4:.2e}   midpoint {e_pm:.2e}"
+              f"   (RK4 {e_pm / e_rk4:.0f}x more accurate)")
+
+
 def main():
     apply_style()
     np.set_printoptions(precision=6)
@@ -233,8 +242,8 @@ def main():
     print(f"\n1. Van der Pol: c = {c}, alpha = {alpha}, beta = {beta}, "
           f"T = {T}, I = {I} (dt = {T / I})")
     results = {
-        "PointMilieu": PointMilieu(N, Y0, T, I, F),   # call exactly as in the PDF
-        "RK4": RK4(Y0, T, I, T),                      # call exactly as in the PDF
+        "PointMilieu": PointMilieu(N, Y0, T, I, F),
+        "RK4": RK4(Y0, T, I, F),
     }
     t = np.linspace(0.0, T, I + 1)
     Y_ref = reference(F, Y0, T, t)
@@ -255,6 +264,9 @@ def main():
 
     print("\n3. Convergence at t = T")
     convergence(list(SCHEMES))
+
+    print("\n4. Same number of F evaluations (4I)")
+    same_cost_comparison()
 
     show_if_possible()
 
