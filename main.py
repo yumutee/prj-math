@@ -1,4 +1,8 @@
+import os
+
+
 import numpy as np
+import matplotlib.pyplot as plt
 
 c = 0.4        # non-linear damping parameter
 alpha = 2.0    # u(0)
@@ -71,7 +75,55 @@ def _test(name, I=(100, 200, 400)):
         print(f"    I = {k:4d}   ||Y^I - Y(T)|| = {e:.3e}{ratio}")
         e_prev = e
 
+
+FIG_DIR = "figures"                     # all figures are saved here
+
+SCHEME_STYLE = {
+    "PointMilieu": dict(color="#eb6834", marker="o", prefix="pm"),
+}
+INK, MUTED = "#0b0b0b", "#8a8985"
+
+
+def apply_style():
+    plt.rcParams.update({
+        "axes.edgecolor": MUTED, "axes.labelcolor": "#2b2a28",
+        "xtick.color": "#52514e", "ytick.color": "#52514e",
+        "axes.grid": True, "grid.color": "#e4e3df", "grid.linewidth": 0.8,
+        "axes.spines.top": False, "axes.spines.right": False,
+        "legend.frameon": False, "lines.linewidth": 2,
+    })
+
+
+def save_figure(fig, filename):
+    os.makedirs(FIG_DIR, exist_ok=True)
+    fig.savefig(os.path.join(FIG_DIR, filename), dpi=200)
+    print(f"  saved {FIG_DIR}/{filename}")
+
+
+def show_if_possible():
+    if plt.get_backend().lower() != "agg":
+        plt.show()
+
+
+def plot_solution(t, M, name, t_fine, Y_fine):
+    s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
+    dt = t[1] - t[0]
+    fig, ax = plt.subplots(2, 1, figsize=(8, 6.4), sharex=True)
+    for k, ylabel in enumerate(["u(t)", "u'(t)"]):
+        ax[k].plot(t_fine, Y_fine[k], color=INK, lw=1.2, label="reference (DOP853)")
+        ax[k].plot(t, M[k], s["marker"], ms=4, color=s["color"],
+                   label=f"{label}, I = {len(t) - 1}, Δt = {dt:.2f}")
+        ax[k].set_ylabel(ylabel)
+    ax[1].set_xlabel("t")
+    fig.suptitle(f"Van der Pol (c = {c:g}): {label} solution")
+    handles, labels = ax[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.95))
+    fig.tight_layout(rect=(0, 0, 1, 0.91))
+    save_figure(fig, f"{s['prefix']}.png")
+
+
 def main():
+    apply_style()
     np.set_printoptions(precision=6)
 
     print("0. Exact-solution test (c = 0)")
@@ -90,6 +142,14 @@ def main():
         errors[name] = np.linalg.norm(M - Y_ref, axis=0)   # ||Y^i - Y(t_i)||_2
         print(f"  {SCHEMES[name]['label']:>8}:  M.shape = {M.shape}   Y^I = {M[:, -1]}"
               f"   max_i ||Y^i - Y(t_i)|| = {errors[name].max():.3e}")
+
+    print("\n2. Figures")
+    t_fine = np.linspace(0.0, T, 3001)
+    Y_fine = reference(F, Y0, T, t_fine)
+    for name, M in results.items():
+        plot_solution(t, M, name, t_fine, Y_fine)
+
+    show_if_possible()
 
 
 if __name__ == "__main__":
