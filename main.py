@@ -33,10 +33,23 @@ def _setup(N, Y0, T, I):
 def PointMilieu(N, Y0, T, I, F):
     dt, t, M = _setup(N, Y0, T, I)
     for i in range(I):                            # i = 0, ..., I-1
-        Yi = M[:, i]                              # Y^i (read only)
+        Yi = M[:, i]                              # Y^i on read-only
         K1 = F(t[i], Yi)                          # slope at t_i
         K2 = F(t[i] + dt / 2, Yi + dt / 2 * K1)   # slope at the midpoint
         M[:, i + 1] = Yi + dt * K2
+    return M
+
+
+def RK4(Y0, T, I, F):
+    N = np.size(Y0)
+    dt, t, M = _setup(N, Y0, T, I)
+    for i in range(I):                            # i = 0, ..., I-1
+        Yi = M[:, i]                              # Y^i on read-only
+        K0 = F(t[i], Yi)                          # slope at the start
+        K1 = F(t[i] + dt / 2, Yi + dt / 2 * K0)   # 1st midpoint slope
+        K2 = F(t[i] + dt / 2, Yi + dt / 2 * K1)   # 2nd midpoint slope
+        K3 = F(t[i] + dt, Yi + dt * K2)           # slope at the end
+        M[:, i + 1] = Yi + dt / 6 * (K0 + 2 * K1 + 2 * K2 + K3)
     return M
 
 
@@ -45,6 +58,7 @@ def _solve_midpoint(Y0, T, I, F):
 
 SCHEMES = {
     "PointMilieu": dict(solver=_solve_midpoint, order=2, label="midpoint"),
+    "RK4": dict(solver=RK4, order=4, label="RK4"),
 }
 
 from scipy.integrate import solve_ivp
@@ -80,6 +94,7 @@ FIG_DIR = "figures"                     # all figures are saved here
 
 SCHEME_STYLE = {
     "PointMilieu": dict(color="#eb6834", marker="o", prefix="pm"),
+    "RK4": dict(color="#2a78d6", marker="s", prefix="rk4"),
 }
 INK, MUTED = "#0b0b0b", "#8a8985"
 
@@ -219,6 +234,7 @@ def main():
           f"T = {T}, I = {I} (dt = {T / I})")
     results = {
         "PointMilieu": PointMilieu(N, Y0, T, I, F),   # call exactly as in the PDF
+        "RK4": RK4(Y0, T, I, T),                      # call exactly as in the PDF
     }
     t = np.linspace(0.0, T, I + 1)
     Y_ref = reference(F, Y0, T, t)
