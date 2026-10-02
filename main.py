@@ -13,3 +13,47 @@ Y0 = np.array([alpha, beta], dtype=float)   # always float, never int
 def F(t, Y):
     Y1, Y2 = Y[0], Y[1]
     return np.array([Y2, c * (1.0 - Y1**2) * Y2 - Y1])
+
+
+def _setup(N, Y0, T, I):
+    if I < 1:
+        raise ValueError()
+    Y0 = np.asarray(Y0, dtype=float).reshape(N)
+    dt = T / I                                    # time step
+    t = np.linspace(0.0, T, I + 1)                # t_0 = 0, ..., t_I = T exactly
+    M = np.zeros((N, I + 1))                      # N rows, I+1 columns
+    M[:, 0] = Y0                                  # column 0 = Y^0
+    return dt, t, M
+
+
+def PointMilieu(N, Y0, T, I, F):
+    dt, t, M = _setup(N, Y0, T, I)
+    for i in range(I):                            # i = 0, ..., I-1
+        Yi = M[:, i]                              # Y^i (read only)
+        K1 = F(t[i], Yi)                          # slope at t_i
+        K2 = F(t[i] + dt / 2, Yi + dt / 2 * K1)   # slope at the midpoint
+        M[:, i + 1] = Yi + dt * K2
+    return M
+
+
+def _solve_midpoint(Y0, T, I, F):
+    return PointMilieu(np.size(Y0), Y0, T, I, F)
+
+SCHEMES = {
+    "PointMilieu": dict(solver=_solve_midpoint, order=2, label="midpoint"),
+}
+
+def main():
+    np.set_printoptions(precision=6)
+
+    print(f"1. Van der Pol: c = {c}, alpha = {alpha}, beta = {beta}, "
+          f"T = {T}, I = {I} (dt = {T / I})")
+    results = {
+        "PointMilieu": PointMilieu(N, Y0, T, I, F),   # call exactly as in the PDF
+    }
+    for name, M in results.items():
+        print(f"  {SCHEMES[name]['label']:>8}:  M.shape = {M.shape}   Y^I = {M[:, -1]}")
+
+
+if __name__ == "__main__":
+    main()
