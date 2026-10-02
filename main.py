@@ -109,17 +109,40 @@ def plot_solution(t, M, name, t_fine, Y_fine):
     s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
     dt = t[1] - t[0]
     fig, ax = plt.subplots(2, 1, figsize=(8, 6.4), sharex=True)
-    for k, ylabel in enumerate(["u(t)", "u'(t)"]):
+    for k, y_label in enumerate(["u(t)", "u'(t)"]):
         ax[k].plot(t_fine, Y_fine[k], color=INK, lw=1.2, label="reference (DOP853)")
         ax[k].plot(t, M[k], s["marker"], ms=4, color=s["color"],
                    label=f"{label}, I = {len(t) - 1}, Δt = {dt:.2f}")
-        ax[k].set_ylabel(ylabel)
+        ax[k].set_ylabel(y_label)
     ax[1].set_xlabel("t")
     fig.suptitle(f"Van der Pol (c = {c:g}): {label} solution")
     handles, labels = ax[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.95))
     fig.tight_layout(rect=(0, 0, 1, 0.91))
     save_figure(fig, f"{s['prefix']}.png")
+
+
+def limit_cycle(t_end=100.0, t_start=80.0):
+    t_long = np.linspace(0.0, t_end, 20001)
+    Y_long = reference(F, Y0, t_end, t_long)
+    return Y_long[:, t_long >= t_start]
+
+
+def plot_phase(M, name, Y_fine, cycle):
+    s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.plot(cycle[0], cycle[1], "--", color=MUTED, lw=2, label="limit cycle (t ∈ [80, 100])")
+    ax.plot(Y_fine[0], Y_fine[1], color=INK, lw=1, label=f"reference, t ∈ [0, {T:g}]")
+    ax.plot(M[0], M[1], s["marker"], ms=4, color=s["color"],
+            label=f"{label}, I = {M.shape[1] - 1}")
+    ax.plot(*Y0, "*", ms=14, color=INK, label=f"Y0 = ({Y0[0]:g}, {Y0[1]:g})")
+    ax.set_xlabel("u")
+    ax.set_ylabel("u'")
+    ax.set_title("Phase portrait (u, u')")
+    ax.set_aspect("equal")
+    ax.legend(loc="center", fontsize=8)          # the inside of the cycle is empty
+    fig.tight_layout()
+    save_figure(fig, f"{s['prefix']}_phase.png")
 
 
 def main():
@@ -146,8 +169,10 @@ def main():
     print("\n2. Figures")
     t_fine = np.linspace(0.0, T, 3001)
     Y_fine = reference(F, Y0, T, t_fine)
+    cycle = limit_cycle()
     for name, M in results.items():
         plot_solution(t, M, name, t_fine, Y_fine)
+        plot_phase(M, name, Y_fine, cycle)
 
     show_if_possible()
 
