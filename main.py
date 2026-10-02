@@ -160,6 +160,53 @@ def plot_error_over_time(t, errors):
     save_figure(fig, "error_over_time.png")
 
 
+def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
+    I_list = np.asarray(I_list)
+    dts = T / I_list
+    Y_ref = reference(F, Y0, T, [T])[:, -1]
+    err = {name: np.array([np.linalg.norm(SCHEMES[name]["solver"](Y0, T, int(k))[:, -1]
+                                          - Y_ref)
+                           for k in I_list])
+           for name in names}
+
+    print("  observed order = log2( e(dt) / e(dt/2) )")
+    print("      I       dt" + "".join(f"  {SCHEMES[n]['label']:>14}  order" for n in err))
+    for k in range(len(I_list)):
+        row = f"  {I_list[k]:5d}  {dts[k]:.5f}"
+        for e in err.values():
+            p = "" if k == 0 else f"{np.log2(e[k - 1] / e[k]):5.2f}"
+            row += f"  {e[k]:14.3e}  {p:>5}"
+        print(row)
+
+    # fit only on I >= 100: larger steps are not yet in the regime e ~ C dt^p
+    asymptotic = I_list >= 100
+    slopes = {n: np.polyfit(np.log(dts[asymptotic]), np.log(e[asymptotic]), 1)[0]
+              for n, e in err.items()}
+    for n, sl in slopes.items():
+        print(f"  fitted slope, {SCHEMES[n]['label']}: {sl:.2f}"
+              f"  (theory {SCHEMES[n]['order']})")
+
+    fig, ax = plt.subplots(figsize=(6.5, 5))
+    for name, e in err.items():
+        s = SCHEME_STYLE[name]
+        ax.loglog(dts, e, s["marker"] + "-", ms=6, color=s["color"],
+                  label=f"{SCHEMES[name]['label']} (slope {slopes[name]:.2f})")
+    drawn = set()
+    for name, e in err.items():                  # guide lines through the last point
+        p = SCHEMES[name]["order"]
+        ax.loglog(dts, e[-1] * (dts / dts[-1])**p, ":" if p <= 2 else "--",
+                  color=MUTED, lw=1.2, label=None if p in drawn else f"slope {p}")
+        drawn.add(p)
+    ax.set_xlabel(r"$\Delta t = T / I$")
+    ax.set_ylabel(r"$\|Y^I - Y(T)\|_2$")
+    ax.set_title("Convergence: " + " vs ".join(SCHEMES[n]["label"] for n in err))
+    ax.grid(True, which="both")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    save_figure(fig, "convergence.png")
+    return slopes
+
+
 def main():
     apply_style()
     np.set_printoptions(precision=6)
@@ -189,6 +236,9 @@ def main():
         plot_solution(t, M, name, t_fine, Y_fine)
         plot_phase(M, name, Y_fine, cycle)
     plot_error_over_time(t, errors)
+
+    print("\n3. Convergence at t = T")
+    convergence(list(SCHEMES))
 
     show_if_possible()
 
