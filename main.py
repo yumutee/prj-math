@@ -43,10 +43,32 @@ SCHEMES = {
     "PointMilieu": dict(solver=_solve_midpoint, order=2, label="midpoint"),
 }
 
+def _harmonic(t, Y):
+    return np.array([Y[1], -Y[0]])
+
+
+def _test(name, I=(100, 200, 400)):
+    scheme = SCHEMES[name]
+    p = scheme["order"]
+    Y_exact_T = np.array([2 * np.cos(T) - 2 * np.sin(T),
+                          -2 * np.sin(T) - 2 * np.cos(T)])
+    print(f"  {scheme['label']}  (expected ratio 2^{p} = {2**p})")
+    e_prev = None
+    for k in I:
+        M = scheme["solver"](np.array([2.0, -2.0]), T, k, _harmonic)
+        e = np.linalg.norm(M[:, -1] - Y_exact_T)
+        ratio = "" if e_prev is None else f"   ratio = {e_prev / e:5.2f}"
+        print(f"    I = {k:4d}   ||Y^I - Y(T)|| = {e:.3e}{ratio}")
+        e_prev = e
+
 def main():
     np.set_printoptions(precision=6)
 
-    print(f"1. Van der Pol: c = {c}, alpha = {alpha}, beta = {beta}, "
+    print("0. Exact-solution test (c = 0)")
+    for name in SCHEMES:
+        _test(name)
+
+    print(f"\n1. Van der Pol: c = {c}, alpha = {alpha}, beta = {beta}, "
           f"T = {T}, I = {I} (dt = {T / I})")
     results = {
         "PointMilieu": PointMilieu(N, Y0, T, I, F),   # call exactly as in the PDF
