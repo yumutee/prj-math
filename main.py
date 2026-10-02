@@ -145,6 +145,21 @@ def plot_phase(M, name, Y_fine, cycle):
     save_figure(fig, f"{s['prefix']}_phase.png")
 
 
+def plot_error_over_time(t, errors):
+    dt = t[1] - t[0]
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for name, e in errors.items():
+        ax.semilogy(t[1:], e[1:], color=SCHEME_STYLE[name]["color"],
+                    label=f"{SCHEMES[name]['label']} (order {SCHEMES[name]['order']})")
+    ax.set_xlabel("t")
+    ax.set_ylabel(r"$\|Y^i - Y(t_i)\|_2$")
+    ax.set_title(f"Error along the trajectory, same step Δt = {dt:.2f}")
+    ax.grid(True, which="both")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    save_figure(fig, "error_over_time.png")
+
+
 def main():
     apply_style()
     np.set_printoptions(precision=6)
@@ -173,6 +188,7 @@ def main():
     for name, M in results.items():
         plot_solution(t, M, name, t_fine, Y_fine)
         plot_phase(M, name, Y_fine, cycle)
+    plot_error_over_time(t, errors)
 
     show_if_possible()
 
