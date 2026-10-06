@@ -1,8 +1,7 @@
 import os
 
-
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 c = 0.4        # non-linear damping parameter
 alpha = 2.0    # u(0)
@@ -53,15 +52,34 @@ def RK4(Y0, T, I, F):
     return M
 
 
+def Bashforth(N, Y0, Y1, T, I, F):
+    dt, t, M = _setup(N, Y0, T, I)
+    M[:, 1] = np.asarray(Y1, dtype=float).reshape(N)  # column 1 = Y^1
+    F_prev = F(t[0], M[:, 0])                     # F(t_0, Y^0)
+    for i in range(1, I):                         # i = 1, ..., I-1
+        F_curr = F(t[i], M[:, i])                 # the only new evaluation of the step
+        M[:, i + 1] = M[:, i] + dt / 2 * (3 * F_curr - F_prev)
+        F_prev = F_curr                           # reused as F(t_{i-1}, Y^{i-1}) next step
+    return M
+
+
 def _solve_midpoint(Y0, T, I, F):
     return PointMilieu(np.size(Y0), Y0, T, I, F)
 
+
+def _solve_bashforth(Y0, T, I, F):
+    N = np.size(Y0)
+    Y1 = PointMilieu(N, Y0, T / I, 1, F)[:, 1]    # Y^1: one midpoint step of size dt
+    return Bashforth(N, Y0, Y1, T, I, F)
+
 SCHEMES = {
-    "PointMilieu": dict(solver=_solve_midpoint, order=2, label="midpoint"),
-    "RK4": dict(solver=RK4, order=4, label="RK4"),
+    "PointMilieu": {"solver": _solve_midpoint, "order": 2, "label": "midpoint"},
+    "RK4": {"solver": RK4, "order": 4, "label": "RK4"},
+    "Bashforth": {"solver": _solve_bashforth, "order": 2, "label": "Adams-Bashforth"},
 }
 
 from scipy.integrate import solve_ivp
+
 
 def reference(F, Y0, T, t_eval):
     sol = solve_ivp(F, (0.0, T), Y0, method="DOP853",
@@ -93,8 +111,9 @@ def _test(name, I=(100, 200, 400)):
 FIG_DIR = "figures"                     # all figures are saved here
 
 SCHEME_STYLE = {
-    "PointMilieu": dict(color="#eb6834", marker="o", prefix="pm"),
-    "RK4": dict(color="#2a78d6", marker="s", prefix="rk4"),
+    "PointMilieu": {"color": "#eb6834", "marker": "o", "prefix": "pm"},
+    "RK4": {"color": "#2a78d6", "marker": "s", "prefix": "rk4"},
+    "Bashforth": {"color": "#1baf7a", "marker": "^", "prefix": "ab2"},
 }
 INK, MUTED = "#0b0b0b", "#8a8985"
 
@@ -179,18 +198,22 @@ def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
     I_list = np.asarray(I_list)
     dts = T / I_list
     Y_ref = reference(F, Y0, T, [T])[:, -1]
-    err = {name: np.array([np.linalg.norm(SCHEMES[name]["solver"](Y0, T, int(k), F)[:, -1]
-                                          - Y_ref)
-                           for k in I_list])
-           for name in names}
+    with np.errstate(over="ignore", invalid="ignore"):
+        err = {name: np.array([np.linalg.norm(SCHEMES[name]["solver"](Y0, T, int(k), F)[:, -1]
+                                              - Y_ref)
+                               for k in I_list])
+               for name in names}
 
     print("  observed order = log2( e(dt) / e(dt/2) )")
-    print("      I       dt" + "".join(f"  {SCHEMES[n]['label']:>14}  order" for n in err))
+    print("      I       dt" + "".join(f"  {SCHEMES[n]['label']:>15}  order" for n in err))
     for k in range(len(I_list)):
         row = f"  {I_list[k]:5d}  {dts[k]:.5f}"
         for e in err.values():
-            p = "" if k == 0 else f"{np.log2(e[k - 1] / e[k]):5.2f}"
-            row += f"  {e[k]:14.3e}  {p:>5}"
+            if not np.isfinite(e[k]):
+                row += f"  {'diverged':>15}  {'':>5}"
+                continue
+            p = "" if k == 0 or not np.isfinite(e[k - 1]) else f"{np.log2(e[k - 1] / e[k]):5.2f}"
+            row += f"  {e[k]:15.3e}  {p:>5}"
         print(row)
 
     # fit only on I >= 100: larger steps are not yet in the regime e ~ C dt^p
@@ -227,8 +250,10 @@ def same_cost_comparison(I_list=(100, 200, 400)):
     for k in I_list:
         e_rk4 = np.linalg.norm(RK4(Y0, T, k, F)[:, -1] - Y_ref)
         e_pm = np.linalg.norm(PointMilieu(N, Y0, T, 2 * k, F)[:, -1] - Y_ref)
+        e_ab = np.linalg.norm(_solve_bashforth(Y0, T, 4 * k, F)[:, -1] - Y_ref)
         print(f"  {4 * k:5d} evaluations:  RK4 {e_rk4:.2e}   midpoint {e_pm:.2e}"
-              f"   (RK4 {e_pm / e_rk4:.0f}x more accurate)")
+              f"   Adams-Bashforth {e_ab:.2e}   (RK4 {e_pm / e_rk4:.0f}x more accurate"
+              f" than midpoint, {e_ab / e_rk4:.0f}x than Adams-Bashforth)")
 
 
 def main():
@@ -244,13 +269,14 @@ def main():
     results = {
         "PointMilieu": PointMilieu(N, Y0, T, I, F),
         "RK4": RK4(Y0, T, I, F),
+        "Bashforth": _solve_bashforth(Y0, T, I, F),
     }
     t = np.linspace(0.0, T, I + 1)
     Y_ref = reference(F, Y0, T, t)
     errors = {}
     for name, M in results.items():
         errors[name] = np.linalg.norm(M - Y_ref, axis=0)   # ||Y^i - Y(t_i)||_2
-        print(f"  {SCHEMES[name]['label']:>8}:  M.shape = {M.shape}   Y^I = {M[:, -1]}"
+        print(f"  {SCHEMES[name]['label']:>15}:  M.shape = {M.shape}   Y^I = {M[:, -1]}"
               f"   max_i ||Y^i - Y(t_i)|| = {errors[name].max():.3e}")
 
     print("\n2. Figures")
