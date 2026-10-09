@@ -18,6 +18,12 @@ def F(t, Y):
     return np.array([Y2, c * (1.0 - Y1**2) * Y2 - Y1])
 
 
+def dF(t, Y):                                     # Jacobian of F, for Newton
+    Y1, Y2 = Y[0], Y[1]
+    return np.array([[0.0, 1.0],
+                     [-2.0 * c * Y1 * Y2 - 1.0, c * (1.0 - Y1**2)]])
+
+
 def _setup(N, Y0, T, I):
     if I < 1:
         raise ValueError()
@@ -63,6 +69,39 @@ def Bashforth(N, Y0, Y1, T, I, F):
     return M
 
 
+def _newton(G, JG, Y, tol=1e-12, kmax=50):
+    Y = np.array(Y, dtype=float)                  # Y^0 = Y_i, copied so M is not modified
+    for _ in range(kmax):
+        G1, G2 = G(Y)
+        (J11, J12), (J21, J22) = JG(Y)
+        det = J11 * J22 - J21 * J12
+        step = np.array([J22 * G1 - J12 * G2, -J21 * G1 + J11 * G2]) / det  # J^{-1} G
+        Y -= step                                 # Y^{k+1} = Y^k - J^{-1}(Y^k) G(Y^k)
+        if np.max(np.abs(step)) < tol:
+            return Y
+    raise RuntimeError(f"Newton did not converge in {kmax} iterations")
+
+
+def Moulton(N, Y0, Y1, T, I, F, dF):
+    dt, t, M = _setup(N, Y0, T, I)
+    M[:, 1] = np.asarray(Y1, dtype=float).reshape(N)   # column 1 = Y^1
+    a = 5 * dt / 12                                    # alpha = 5h/12 of the PDF, not u(0)
+    F_prev = F(t[0], M[:, 0])                          # F(t_0, Y^0)
+    for i in range(1, I):                              # i = 1, ..., I-1
+        F_curr = F(t[i], M[:, i])
+        P = M[:, i] + dt / 12 * (8 * F_curr - F_prev)  # P^i, the explicit part
+
+        def G(Y):                                      # G^i, its zero is Y^{i+1}
+            return a * F(t[i + 1], Y) - Y + P
+
+        def JG(Y):                                     # Jacobian of G^i
+            return a * dF(t[i + 1], Y) - np.eye(N)
+
+        M[:, i + 1] = _newton(G, JG, M[:, i])
+        F_prev = F_curr
+    return M
+
+
 def _solve_midpoint(Y0, T, I, F):
     return PointMilieu(np.size(Y0), Y0, T, I, F)
 
@@ -72,10 +111,17 @@ def _solve_bashforth(Y0, T, I, F):
     Y1 = PointMilieu(N, Y0, T / I, 1, F)[:, 1]    # Y^1: one midpoint step of size dt
     return Bashforth(N, Y0, Y1, T, I, F)
 
+
+def _solve_moulton(Y0, T, I, F):
+    N = np.size(Y0)
+    Y1 = RK4(Y0, T / I, 1, F)[:, 1]               # Y^1: one RK4 step of size dt
+    return Moulton(N, Y0, Y1, T, I, F, JACOBIAN[F])
+
 SCHEMES = {
     "PointMilieu": {"solver": _solve_midpoint, "order": 2, "label": "midpoint"},
     "RK4": {"solver": RK4, "order": 4, "label": "RK4"},
     "Bashforth": {"solver": _solve_bashforth, "order": 2, "label": "Adams-Bashforth"},
+    "Moulton": {"solver": _solve_moulton, "order": 3, "label": "Adams-Moulton"},
 }
 
 from scipy.integrate import solve_ivp
@@ -91,6 +137,13 @@ def reference(F, Y0, T, t_eval):
 
 def _harmonic(t, Y):
     return np.array([Y[1], -Y[0]])
+
+
+def _d_harmonic(t, Y):
+    return np.array([[0.0, 1.0], [-1.0, 0.0]])
+
+
+JACOBIAN = {F: dF, _harmonic: _d_harmonic}        # Adams-Moulton needs dF/dY for each F
 
 
 def _test(name, I=(100, 200, 400)):
@@ -114,6 +167,7 @@ SCHEME_STYLE = {
     "PointMilieu": {"color": "#eb6834", "marker": "o", "prefix": "pm"},
     "RK4": {"color": "#2a78d6", "marker": "s", "prefix": "rk4"},
     "Bashforth": {"color": "#1baf7a", "marker": "^", "prefix": "ab2"},
+    "Moulton": {"color": "#eda100", "marker": "D", "prefix": "am"},
 }
 INK, MUTED = "#0b0b0b", "#8a8985"
 
@@ -230,14 +284,14 @@ def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
         ax.loglog(dts, e, s["marker"] + "-", ms=6, color=s["color"],
                   label=f"{SCHEMES[name]['label']} (slope {slopes[name]:.2f})")
     drawn = set()
-    for name, e in err.items():                  # guide lines through the last point
+    for name, e in sorted(err.items(), key=lambda ne: SCHEMES[ne[0]]["order"]):  # guide lines through the last point
         p = SCHEMES[name]["order"]
-        ax.loglog(dts, e[-1] * (dts / dts[-1])**p, ":" if p <= 2 else "--",
+        ax.loglog(dts, e[-1] * (dts / dts[-1])**p, {2: ":", 3: "-.", 4: "--"}[p],
                   color=MUTED, lw=1.2, label=None if p in drawn else f"slope {p}")
         drawn.add(p)
     ax.set_xlabel(r"$\Delta t = T / I$")
     ax.set_ylabel(r"$\|Y^I - Y(T)\|_2$")
-    ax.set_title("Convergence: " + " vs ".join(SCHEMES[n]["label"] for n in err))
+    ax.set_title("Convergence at t = T")
     ax.grid(True, which="both")
     ax.legend(loc="lower right")
     fig.tight_layout()
@@ -270,6 +324,7 @@ def main():
         "PointMilieu": PointMilieu(N, Y0, T, I, F),
         "RK4": RK4(Y0, T, I, F),
         "Bashforth": _solve_bashforth(Y0, T, I, F),
+        "Moulton": _solve_moulton(Y0, T, I, F),
     }
     t = np.linspace(0.0, T, I + 1)
     Y_ref = reference(F, Y0, T, t)
