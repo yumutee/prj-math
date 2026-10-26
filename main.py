@@ -241,7 +241,7 @@ def plot_error_over_time(t, errors):
                     label=f"{SCHEMES[name]['label']} (order {SCHEMES[name]['order']})")
     ax.set_xlabel("t")
     ax.set_ylabel(r"$\|Y^i - Y(t_i)\|_2$")
-    ax.set_title(f"Error along the trajectory, same step Δt = {dt:.2f}")
+    ax.set_title(f"Error along the trajectory, same step Δt = {dt:.3g}")
     ax.grid(True, which="both")
     ax.legend(loc="lower right")
     fig.tight_layout()
@@ -299,6 +299,21 @@ def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
     return slopes
 
 
+def _counted(f):
+    def g(t, Y):
+        g.calls += 1
+        return f(t, Y)
+    g.calls = 0
+    return g
+
+
+def _moulton_cost(I):
+    Fc, dFc = _counted(F), _counted(dF)
+    Y1 = RK4(Y0, T / I, 1, Fc)[:, 1]
+    M = Moulton(N, Y0, Y1, T, I, Fc, dFc)
+    return M, Fc.calls + dFc.calls                # evaluations of F and of its Jacobian
+
+
 def same_cost_comparison(I_list=(100, 200, 400)):
     Y_ref = reference(F, Y0, T, [T])[:, -1]
     for k in I_list:
@@ -308,6 +323,17 @@ def same_cost_comparison(I_list=(100, 200, 400)):
         print(f"  {4 * k:5d} evaluations:  RK4 {e_rk4:.2e}   midpoint {e_pm:.2e}"
               f"   Adams-Bashforth {e_ab:.2e}   (RK4 {e_pm / e_rk4:.0f}x more accurate"
               f" than midpoint, {e_ab / e_rk4:.0f}x than Adams-Bashforth)")
+        I_guess = 4 * k // 9                      # ~4 Newton iterations: 1 + 2 * 4 per step
+        _, cost = _moulton_cost(I_guess)
+        I_am = round(I_guess * 4 * k / cost)      # rescale I to hit the 4k budget
+        M_am, cost = _moulton_cost(I_am)
+        while cost > 4 * k:                       # never more evaluations than the others
+            I_am -= 1
+            M_am, cost = _moulton_cost(I_am)
+        e_am = np.linalg.norm(M_am[:, -1] - Y_ref)
+        newton = ((cost - 5) / (I_am - 1) - 1) / 2   # cost = 4 (RK4 for Y^1) + 1 + (I-1)(1 + 2 it)
+        print(f"{'':20}Adams-Moulton {e_am:.2e}   (I = {I_am}, {cost} evaluations of F and dF,"
+              f" {newton:.1f} Newton iterations per step, RK4 {e_am / e_rk4:.0f}x more accurate)")
 
 
 def main():
