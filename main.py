@@ -170,6 +170,7 @@ SCHEME_STYLE = {
     "Moulton": {"color": "#eda100", "marker": "D", "prefix": "am"},
 }
 INK, MUTED = "#0b0b0b", "#8a8985"
+MAX_MARKERS = 100                       # more markers merge into a band hiding the reference
 
 
 def apply_style():
@@ -193,14 +194,20 @@ def show_if_possible():
         plt.show()
 
 
+def marker_step(M, sep=", "):
+    every = max(1, (M.shape[1] - 1) // MAX_MARKERS)
+    return every, "" if every == 1 else f"{sep}1 marker every {every} steps"
+
+
 def plot_solution(t, M, name, t_fine, Y_fine):
     s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
     dt = t[1] - t[0]
+    every, note = marker_step(M)
     fig, ax = plt.subplots(2, 1, figsize=(8, 6.4), sharex=True)
     for k, y_label in enumerate(["u(t)", "u'(t)"]):
         ax[k].plot(t_fine, Y_fine[k], color=INK, lw=1.2, label="reference (DOP853)")
-        ax[k].plot(t, M[k], s["marker"], ms=4, color=s["color"],
-                   label=f"{label}, I = {len(t) - 1}, Δt = {dt:.2f}")
+        ax[k].plot(t[::every], M[k, ::every], s["marker"], ms=4, color=s["color"],
+                   label=f"{label}, I = {len(t) - 1}, Δt = {dt:.3g}{note}")
         ax[k].set_ylabel(y_label)
     ax[1].set_xlabel("t")
     fig.suptitle(f"Van der Pol (c = {c:g}): {label} solution")
@@ -218,11 +225,12 @@ def limit_cycle(t_end=100.0, t_start=80.0):
 
 def plot_phase(M, name, Y_fine, cycle):
     s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
+    every, note = marker_step(M, sep="\n")
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.plot(cycle[0], cycle[1], "--", color=MUTED, lw=2, label="limit cycle (t ∈ [80, 100])")
     ax.plot(Y_fine[0], Y_fine[1], color=INK, lw=1, label=f"reference, t ∈ [0, {T:g}]")
-    ax.plot(M[0], M[1], s["marker"], ms=4, color=s["color"],
-            label=f"{label}, I = {M.shape[1] - 1}")
+    ax.plot(M[0, ::every], M[1, ::every], s["marker"], ms=4, color=s["color"],
+            label=f"{label}, I = {M.shape[1] - 1}{note}")
     ax.plot(*Y0, "*", ms=14, color=INK, label=f"Y0 = ({Y0[0]:g}, {Y0[1]:g})")
     ax.set_xlabel("u")
     ax.set_ylabel("u'")
