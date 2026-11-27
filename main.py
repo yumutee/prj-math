@@ -2,6 +2,7 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import ticker
 
 c = 0.4        # non-linear damping parameter
 alpha = 2.0    # u(0)
@@ -163,11 +164,13 @@ def _test(name, I=(100, 200, 400)):
 
 FIG_DIR = "figures"                     # all figures are saved here
 
+# figures go into a French report: their text is in French, the console stays in English
 SCHEME_STYLE = {
-    "PointMilieu": {"color": "#eb6834", "marker": "o", "prefix": "pm"},
-    "RK4": {"color": "#2a78d6", "marker": "s", "prefix": "rk4"},
-    "Bashforth": {"color": "#1baf7a", "marker": "^", "prefix": "ab2"},
-    "Moulton": {"color": "#eda100", "marker": "D", "prefix": "am"},
+    "PointMilieu": {"color": "#eb6834", "marker": "o", "prefix": "pm", "label": "point milieu"},
+    "RK4": {"color": "#2a78d6", "marker": "s", "prefix": "rk4", "label": "RK4"},
+    "Bashforth": {"color": "#1baf7a", "marker": "^", "prefix": "ab2",
+                  "label": "Adams-Bashforth"},
+    "Moulton": {"color": "#eda100", "marker": "D", "prefix": "am", "label": "Adams-Moulton"},
 }
 INK, MUTED = "#0b0b0b", "#8a8985"
 MAX_MARKERS = 100                       # more markers merge into a band hiding the reference
@@ -183,7 +186,24 @@ def apply_style():
     })
 
 
+def fr(x, fmt="g"):
+    return format(x, fmt).replace(".", ",").replace("-", "\u2212")
+
+
+class FrenchScalarFormatter(ticker.ScalarFormatter):
+    def __call__(self, x, pos=None):
+        return super().__call__(x, pos).replace(".", ",")
+
+
+def french_ticks(fig):
+    for ax in fig.axes:                           # log axes print 10^k: nothing to change
+        for axis in (ax.xaxis, ax.yaxis):
+            if type(axis.get_major_formatter()) is ticker.ScalarFormatter:
+                axis.set_major_formatter(FrenchScalarFormatter())
+
+
 def save_figure(fig, filename):
+    french_ticks(fig)
     os.makedirs(FIG_DIR, exist_ok=True)
     fig.savefig(os.path.join(FIG_DIR, filename), dpi=200)
     print(f"  saved {FIG_DIR}/{filename}")
@@ -196,21 +216,21 @@ def show_if_possible():
 
 def marker_step(M, sep=", "):
     every = max(1, (M.shape[1] - 1) // MAX_MARKERS)
-    return every, "" if every == 1 else f"{sep}1 marker every {every} steps"
+    return every, "" if every == 1 else f"{sep}1 marqueur tous les {every} pas"
 
 
 def plot_solution(t, M, name, t_fine, Y_fine):
-    s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
+    s, label = SCHEME_STYLE[name], SCHEME_STYLE[name]["label"]
     dt = t[1] - t[0]
     every, note = marker_step(M)
     fig, ax = plt.subplots(2, 1, figsize=(8, 6.4), sharex=True)
     for k, y_label in enumerate(["u(t)", "u'(t)"]):
-        ax[k].plot(t_fine, Y_fine[k], color=INK, lw=1.2, label="reference (DOP853)")
+        ax[k].plot(t_fine, Y_fine[k], color=INK, lw=1.2, label="référence (DOP853)")
         ax[k].plot(t[::every], M[k, ::every], s["marker"], ms=4, color=s["color"],
-                   label=f"{label}, I = {len(t) - 1}, Δt = {dt:.3g}{note}")
+                   label=f"{label}, I = {len(t) - 1}, Δt = {fr(dt, '.3g')}{note}")
         ax[k].set_ylabel(y_label)
     ax[1].set_xlabel("t")
-    fig.suptitle(f"Van der Pol (c = {c:g}): {label} solution")
+    fig.suptitle(f"Van der Pol (c = {fr(c)}) : solution approchée ({label})")
     handles, labels = ax[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.95))
     fig.tight_layout(rect=(0, 0, 1, 0.91))
@@ -224,17 +244,17 @@ def limit_cycle(t_end=100.0, t_start=80.0):
 
 
 def plot_phase(M, name, Y_fine, cycle):
-    s, label = SCHEME_STYLE[name], SCHEMES[name]["label"]
+    s, label = SCHEME_STYLE[name], SCHEME_STYLE[name]["label"]
     every, note = marker_step(M, sep="\n")
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.plot(cycle[0], cycle[1], "--", color=MUTED, lw=2, label="limit cycle (t ∈ [80, 100])")
-    ax.plot(Y_fine[0], Y_fine[1], color=INK, lw=1, label=f"reference, t ∈ [0, {T:g}]")
+    ax.plot(cycle[0], cycle[1], "--", color=MUTED, lw=2, label="cycle limite (t ∈ [80 ; 100])")
+    ax.plot(Y_fine[0], Y_fine[1], color=INK, lw=1, label=f"référence, t ∈ [0 ; {fr(T)}]")
     ax.plot(M[0, ::every], M[1, ::every], s["marker"], ms=4, color=s["color"],
             label=f"{label}, I = {M.shape[1] - 1}{note}")
-    ax.plot(*Y0, "*", ms=14, color=INK, label=f"Y0 = ({Y0[0]:g}, {Y0[1]:g})")
+    ax.plot(*Y0, "*", ms=14, color=INK, label=f"Y0 = ({fr(Y0[0])} ; {fr(Y0[1])})")
     ax.set_xlabel("u")
     ax.set_ylabel("u'")
-    ax.set_title("Phase portrait (u, u')")
+    ax.set_title("Portrait de phase (u, u')")
     ax.set_aspect("equal")
     ax.legend(loc="center", fontsize=8)          # the inside of the cycle is empty
     fig.tight_layout()
@@ -246,10 +266,10 @@ def plot_error_over_time(t, errors):
     fig, ax = plt.subplots(figsize=(8, 4))
     for name, e in errors.items():
         ax.semilogy(t[1:], e[1:], color=SCHEME_STYLE[name]["color"],
-                    label=f"{SCHEMES[name]['label']} (order {SCHEMES[name]['order']})")
+                    label=f"{SCHEME_STYLE[name]['label']} (ordre {SCHEMES[name]['order']})")
     ax.set_xlabel("t")
     ax.set_ylabel(r"$\|Y^i - Y(t_i)\|_2$")
-    ax.set_title(f"Error along the trajectory, same step Δt = {dt:.3g}")
+    ax.set_title(f"Erreur le long de la trajectoire, même pas Δt = {fr(dt, '.3g')}")
     ax.grid(True, which="both")
     ax.legend(loc="lower right")
     fig.tight_layout()
@@ -290,16 +310,16 @@ def convergence(names, I_list=(25, 50, 100, 200, 400, 800, 1600)):
     for name, e in err.items():
         s = SCHEME_STYLE[name]
         ax.loglog(dts, e, s["marker"] + "-", ms=6, color=s["color"],
-                  label=f"{SCHEMES[name]['label']} (slope {slopes[name]:.2f})")
+                  label=f"{s['label']} (pente {fr(slopes[name], '.2f')})")
     drawn = set()
     for name, e in sorted(err.items(), key=lambda ne: SCHEMES[ne[0]]["order"]):  # guide lines through the last point
         p = SCHEMES[name]["order"]
         ax.loglog(dts, e[-1] * (dts / dts[-1])**p, {2: ":", 3: "-.", 4: "--"}[p],
-                  color=MUTED, lw=1.2, label=None if p in drawn else f"slope {p}")
+                  color=MUTED, lw=1.2, label=None if p in drawn else f"pente {p}")
         drawn.add(p)
     ax.set_xlabel(r"$\Delta t = T / I$")
     ax.set_ylabel(r"$\|Y^I - Y(T)\|_2$")
-    ax.set_title("Convergence at t = T")
+    ax.set_title("Convergence en t = T")
     ax.grid(True, which="both")
     ax.legend(loc="lower right")
     fig.tight_layout()
